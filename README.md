@@ -73,6 +73,23 @@ If an image for the C code is not found, it builds one. The operation is perform
 once and it takes a while to finish it. After that, the script runs the necessary 
 computations transparently.
 
+## Build with docker
+Current repo could be build via Dockerfile. Certain packages assume that render will be done on headless server, but I think it should also work on any PC. Build and run docker via next commands:
+```bash
+docker build -t light-field:latest .
+docker run --rm -it -d -v /home:$(pwd) light-field:latest bash
+```
+
+To test and compare cup vs plate:
+```bash
+python3 test.py
+```
+
+For headless render command will be:
+```bash
+Xvfb :99 -screen 0 1900x1080x24+32 & export DISPLAY=:99 && python3 test.py
+```
+
 ## Contribution
 For anyone interested in having a contribution, these are things to be done. 
 Due to the time constraints, I'm not able to do these on my own:
