@@ -178,13 +178,19 @@ void renderingFun()
 	double			CenX[CAMNUM], CenY[CAMNUM];
 	int				total;
 
-  fpt_art_q4 = fopen("all_q4_v1.8.art", "wb");
-  fpt_art_q8 = fopen("all_q8_v1.8.art", "wb");
-//		fpt_ccd = fopen("all_v1.7.ccd", "wb");
-  fpt_cir_q8 = fopen("all_q8_v1.8.cir", "wb");
-//		fpt_fd = fopen("all.fd", "wb");
-  fpt_fd_q8 = fopen("all_q8_v1.8.fd", "wb");
-  fpt_ecc_q8 = fopen("all_q8_v1.8.ecc", "wb");
+  // outfiles
+  char tmp_path[200];
+  strcpy(tmp_path, fname);
+  fpt_art_q4 = fopen(strcat(tmp_path, "_q4_v1.8.art"), "wb");
+  strcpy(tmp_path, fname);
+  fpt_art_q8 = fopen(strcat(tmp_path, "_q8_v1.8.art"), "wb");
+  strcpy(tmp_path, fname);
+  fpt_cir_q8 = fopen(strcat(tmp_path, "_q8_v1.8.cir"), "wb");
+  strcpy(tmp_path, fname);
+  fpt_fd_q8 = fopen(strcat(tmp_path, "_q8_v1.8.fd"), "wb");
+  strcpy(tmp_path, fname);
+  fpt_ecc_q8 = fopen(strcat(tmp_path, "_q8_v1.8.ecc"), "wb");
+
   // initialize ART
   GenerateBasisLUT();
   // initialize: read camera set
@@ -455,14 +461,13 @@ void reshape (int w, int h)
 void printHelp() {
   printf("Usage: \n");
   printf("\t ./3DAlignment obj\n");
-  printf("obj - name of the object to be encoded\n");
+  printf("obj - path to the object to be encoded (no .obj suffix!) \n");
 }
 
 int main(int argc, char** argv)
 {
   if (argc != 2) {
-    printf("ERROR: The program has only 1 argument, received %d instead!\n",
-           argc - 1);
+    printf("ERROR: The program has 1 argument, received %d instead!\n", argc - 1);
     printHelp();
     exit(2);
   }

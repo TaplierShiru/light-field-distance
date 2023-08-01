@@ -1,13 +1,4 @@
-# For piked version only CUDA from 10.1 to 11.4 supported
-# But its work fine with 11.7
-ARG CUDA_VERSION=12.1.0
-ARG UBUNTU_VERSION=20.04
-
-# GPU version
-FROM nvidia/cuda:${CUDA_VERSION}-devel-ubuntu${UBUNTU_VERSION} 
-
-# CPU version
-# FROM ubuntu:20.04
+FROM ubuntu:20.04
 
 ENV DEBIAN_FRONTEND noninteractive
 
@@ -18,8 +9,6 @@ ARG BLENDER_VERSION_MAJ=3.5
 ARG BLENDER_VERSION=3.5.1
 
 ENV PYTHON_SITE_PACKAGES /usr/local/lib/python$PYTHON_VER_MAJ/site-packages/
-ENV WITH_INSTALL_PORTABLE OFF
-ENV NVIDIA_DRIVER_CAPABILITIES graphics,compute,video,utility
 
 RUN apt-get update
 RUN apt-get -y install \
@@ -74,7 +63,7 @@ RUN cd lfd/LightField/ \
   && make release 
 
 # Install additional packages
-RUN pip3 install numpy Pillow matplotlib jupyterlab trimesh
+RUN pip3 install numpy Pillow matplotlib jupyterlab trimesh[easy] tqdm
 WORKDIR /home
 RUN python3 setup.py install
 

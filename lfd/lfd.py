@@ -14,15 +14,7 @@ import trimesh
 SIMILARITY_TAG = b"SIMILARITY:"
 CURRENT_DIR = Path(__file__).parent
 
-GENERATED_FILES_NAMES = [
-    "all_q4_v1.8.art",
-    "all_q8_v1.8.art",
-    "all_q8_v1.8.cir",
-    "all_q8_v1.8.ecc",
-    "all_q8_v1.8.fd",
-]
-
-OUTPUT_NAME_TEMPLATES = [
+NAME_TEMPLATES = [
     "{}_q4_v1.8.art",
     "{}_q8_v1.8.art",
     "{}_q8_v1.8.cir",
@@ -49,11 +41,14 @@ def find_similarity_in_logs(logs: bytes) -> float:
             break
     return float(similarity_line)
 
+def exist_and_nonempty(path):
+    return os.path.exists(path) and os.path.getsize(path) > 0
 
 class MeshEncoder:
     """Class holding an object and preprocessing it using an external cmd."""
 
-    def __init__(self, vertices: np.ndarray, triangles: np.ndarray):
+    # kiui: modified to save permanent cache
+    def __init__(self, mesh: trimesh.Trimesh, cache_dir: Optional[str]=None, name: Optional[str]=None):
         """Instantiate the class.
 
         It instantiates an empty, temporary folder that will hold any
@@ -64,10 +59,18 @@ class MeshEncoder:
             triangles: np.ndarray where each entry is a vector with 3 elements.
                 Each element correspond to vertices that create a triangle.
         """
-        self.mesh = trimesh.Trimesh(vertices=vertices, faces=triangles)
-        self.temp_dir_path = Path(tempfile.mkdtemp())
-        self.file_name = uuid.uuid4()
-        self.temp_path = self.temp_dir_path / "{}.obj".format(self.file_name)
+        self.mesh = mesh
+        if cache_dir and name:
+            self.cache_dir = Path(cache_dir).resolve() # to absolute path! important.
+            os.makedirs(self.cache_dir, exist_ok=True)
+            self.file_name = name
+            self.permanent = True
+        else:
+            self.cache_dir = Path(tempfile.mkdtemp())
+            self.file_name = uuid.uuid4()
+            self.permanent = False
+
+        self.temp_path = self.cache_dir / "{}.obj".format(self.file_name)
 
         self.mesh.export(self.temp_path.as_posix())
 
@@ -82,7 +85,7 @@ class MeshEncoder:
         """
         return self.temp_path.with_suffix("").as_posix()
 
-    def align_mesh(self):
+    def align_mesh(self, verbose=False):
         """Create data of a 3D mesh to calculate Light Field Distance.
 
         It runs an external command that create intermediate files and moves
@@ -91,31 +94,32 @@ class MeshEncoder:
         Returns:
             None
         """
-        process = subprocess.Popen(
-            ["./3DAlignment", self.temp_path.with_suffix("").as_posix()],
-            cwd=(CURRENT_DIR / "Executable").as_posix(),
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
 
-        output, err = process.communicate()
-        if len(err) > 0:
-            print(err)
-            sys.exit(1)
+        # if already aligned, do nothing.
+        if all([exist_and_nonempty((self.cache_dir / f.format(self.file_name)).as_posix()) for f in NAME_TEMPLATES]):
+            if verbose:
+                print(f'[MeshEncoder.align_mesh] skipped cached alignment for {self.temp_path}')
+            return
+        else:
+            if verbose:
+                print(f'[MeshEncoder.align_mesh] generating alignment for {self.temp_path}')
 
-        for file, out_file in zip(
-            GENERATED_FILES_NAMES, OUTPUT_NAME_TEMPLATES
-        ):
-            shutil.move(
-                os.path.join((CURRENT_DIR / "Executable").as_posix(), file),
-                (
-                    self.temp_dir_path / out_file.format(self.file_name)
-                ).as_posix(),
+            process = subprocess.Popen(
+                ["./3DAlignment", self.get_path()],
+                cwd=(CURRENT_DIR / "Executable").as_posix(),
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
 
+            output, err = process.communicate()
+            if len(err) > 0:
+                print(err)
+                sys.exit(1)
+
     def __del__(self):
-        shutil.rmtree(self.temp_dir_path.as_posix())
+        if not self.permanent:
+            shutil.rmtree(self.cache_dir.as_posix())
 
 
 class LightFieldDistance:
@@ -135,10 +139,8 @@ class LightFieldDistance:
 
     def get_distance(
         self,
-        vertices_1: np.ndarray,
-        triangles_1: np.ndarray,
-        vertices_2: np.ndarray,
-        triangles_2: np.ndarray,
+        mesh_1: trimesh.Trimesh,
+        mesh_2: trimesh.Trimesh,
     ) -> float:
         """Calculate LFD between two meshes.
 
@@ -148,27 +150,16 @@ class LightFieldDistance:
         vector consisting of indices to appropriate vertices.
 
         Args:
-            vertices_1: np.ndarray of vertices of the first object.
-            triangles_1: np.ndarray of indices to vertices corresponding
-                to particular indices connecting and forming a triangle.
-            vertices_2: np.ndarray of vertices of the second object.
-            triangles_2: np.ndarray of indices to vertices corresponding
-                to particular indices connecting and forming a triangle. This
-                parameter is for the second object.
+            
 
         Returns:
             Light Field Distance between `object_1` and `object_2`.
         """
-        mesh_1 = MeshEncoder(vertices_1, triangles_1)
-        mesh_2 = MeshEncoder(vertices_2, triangles_2)
-
-        if self.verbose:
-            print("Aligning mesh 1 at {} ...".format(mesh_1.get_path()))
-        mesh_1.align_mesh()
-
-        if self.verbose:
-            print("Aligning mesh 2 at {} ...".format(mesh_2.get_path()))
-        mesh_2.align_mesh()
+        mesh_1 = MeshEncoder(mesh_1)
+        mesh_2 = MeshEncoder(mesh_2)
+        
+        mesh_1.align_mesh(self.verbose)
+        mesh_2.align_mesh(self.verbose)
 
         if self.verbose:
             print("Calculating distances ...")
@@ -185,6 +176,19 @@ class LightFieldDistance:
         lfd = find_similarity_in_logs(output)
 
         return lfd
+
+# support permanant cache:
+def light_field_distance(mesh_1: MeshEncoder, mesh_2: MeshEncoder):
+    process = subprocess.Popen(
+        ["./Distance", mesh_1.get_path(), mesh_2.get_path()],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        cwd=(CURRENT_DIR / "Executable").as_posix(),
+    )
+    output, err = process.communicate()
+    lfd = find_similarity_in_logs(output)
+    return lfd
 
 
 def main():
